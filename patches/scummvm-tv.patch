@@ -1,0 +1,184 @@
+diff --git a/backends/platform/libretro/include/libretro-core-options.h b/backends/platform/libretro/include/libretro-core-options.h
+index cdc8635..054cd89 100644
+--- a/backends/platform/libretro/include/libretro-core-options.h
++++ b/backends/platform/libretro/include/libretro-core-options.h
+@@ -664,6 +664,8 @@ struct retro_core_option_value retro_keys_label_us [] = {
+ 	{"RETROKE_SHIFT_MOD", "Keyboard Shift (Modifier)"},
+ 	{"RETROKE_CTRL_MOD", "Keyboard Control (Modifier)"},
+ 	{"RETROKE_ALT_MOD", "Keyboard Alt (Modifier)"},
++	{"RETROKE_QUICKSAVE", "SCUMM Quicksave (slot 1)"},
++	{"RETROKE_QUICKLOAD", "SCUMM Quickload (slot 1)"},
+ 	{"RETROK_BACKSPACE", "Keyboard Backspace"},
+ 	{"RETROK_TAB", "Keyboard Tab"},
+ 	{"RETROK_CLEAR", "Keyboard Clear"},
+diff --git a/backends/platform/libretro/include/libretro-mapper.h b/backends/platform/libretro/include/libretro-mapper.h
+index b63f9d8..c63dadb 100644
+--- a/backends/platform/libretro/include/libretro-mapper.h
++++ b/backends/platform/libretro/include/libretro-mapper.h
+@@ -50,6 +50,8 @@
+ #define RETROKE_SHIFT_MOD -10
+ #define RETROKE_CTRL_MOD -11
+ #define RETROKE_ALT_MOD -12
++#define RETROKE_QUICKSAVE -13
++#define RETROKE_QUICKLOAD -14
+ 
+ /* libretro.cpp functions */
+ extern retro_input_state_t retro_input_cb;
+@@ -76,6 +78,8 @@ static const struct retro_keymap retro_keys[] = {
+ 	{RETROKE_SHIFT_MOD, 0, "RETROKE_SHIFT_MOD"},
+ 	{RETROKE_CTRL_MOD, 0, "RETROKE_CTRL_MOD"},
+ 	{RETROKE_ALT_MOD, 0, "RETROKE_ALT_MOD"},
++	{RETROKE_QUICKSAVE, 0, "RETROKE_QUICKSAVE"},
++	{RETROKE_QUICKLOAD, 0, "RETROKE_QUICKLOAD"},
+ 	{RETROK_BACKSPACE, Common::KEYCODE_BACKSPACE, "RETROK_BACKSPACE"},
+ 	{RETROK_TAB, Common::KEYCODE_TAB, "RETROK_TAB"},
+ 	{RETROK_CLEAR, Common::KEYCODE_CLEAR, "RETROK_CLEAR"},
+diff --git a/backends/platform/libretro/src/libretro-core.cpp b/backends/platform/libretro/src/libretro-core.cpp
+index 5cf037d..9c5e755 100644
+--- a/backends/platform/libretro/src/libretro-core.cpp
++++ b/backends/platform/libretro/src/libretro-core.cpp
+@@ -1042,6 +1042,8 @@ static void refresh_authorized_locations(void) {
+ }
+ 
+ void retro_init(void) {
++	extern void retro_tv_clock_reset();
++	retro_tv_clock_reset();
+ 	struct retro_log_callback log;
+ 	if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
+ 		retro_log_cb = log.log;
+@@ -1256,6 +1258,10 @@ bool retro_load_game_special(unsigned game_type, const struct retro_game_info *i
+ }
+ 
+ void retro_run(void) {
++	extern void retro_tv_clock_frame(bool);
++	bool tvFastForward = false;
++	environ_cb(RETRO_ENVIRONMENT_GET_FASTFORWARDING, &tvFastForward);
++	retro_tv_clock_frame(tvFastForward);
+ 	/* Settings change is covered by RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK
+ 	except in case of core options reset to defaults, for which the following call is needed*/
+ 	retro_update_options_display();
+diff --git a/backends/platform/libretro/src/libretro-os-events.cpp b/backends/platform/libretro/src/libretro-os-events.cpp
+index 11cc9de..8bb91ee 100644
+--- a/backends/platform/libretro/src/libretro-os-events.cpp
++++ b/backends/platform/libretro/src/libretro-os-events.cpp
+@@ -30,6 +30,19 @@
+ #include "backends/platform/libretro/include/libretro-graphics-opengl.h"
+ #endif
+ 
++static uint64 tvClockOffset, tvLastFrame;
++static bool tvFastForward;
++void retro_tv_clock_reset() { tvClockOffset = tvLastFrame = 0; tvFastForward = false; }
++void retro_tv_clock_frame(bool fastForward) {
++	uint64 now = cpu_features_get_time_usec();
++	// Preserve real time normally. Fast-forward advances at least one 60 Hz tick
++	// per frontend frame, without moving the clock backwards when released.
++	if (fastForward && tvLastFrame && now - tvLastFrame < 16667)
++		tvClockOffset += 16667 - (now - tvLastFrame);
++	tvLastFrame = now;
++	tvFastForward = fastForward;
++}
++
+ bool OSystem_libretro::pollEvent(Common::Event &event) {
+ 	((LibretroTimerManager *)_timerManager)->checkThread(THREAD_SWITCH_POLL);
+ 	if (!_events.empty()) {
+@@ -42,7 +55,7 @@ bool OSystem_libretro::pollEvent(Common::Event &event) {
+ }
+ 
+ uint32 OSystem_libretro::getMillis(bool skipRecord) {
+-	return (uint32)(cpu_features_get_time_usec() / 1000) - _startTime;
++	return (uint32)((cpu_features_get_time_usec() + tvClockOffset) / 1000) - _startTime;
+ }
+ 
+ void OSystem_libretro::delayMillis(uint msecs) {
+@@ -50,7 +63,9 @@ void OSystem_libretro::delayMillis(uint msecs) {
+ 	uint32 elapsed_time = 0;
+ 
+ 	while (elapsed_time < msecs) {
+-		if (!((LibretroTimerManager *)_timerManager)->checkThread(THREAD_SWITCH_DELAY))
++		if (tvFastForward)
++			((LibretroTimerManager *)_timerManager)->switchThread(THREAD_SWITCH_DELAY);
++		else if (!((LibretroTimerManager *)_timerManager)->checkThread(THREAD_SWITCH_DELAY))
+ 			usleep(1000);
+ 		elapsed_time = getMillis() - start_time;
+ 	}
+diff --git a/backends/platform/libretro/src/libretro-os-inputs.cpp b/backends/platform/libretro/src/libretro-os-inputs.cpp
+index 2e57782..2bdd8be 100644
+--- a/backends/platform/libretro/src/libretro-os-inputs.cpp
++++ b/backends/platform/libretro/src/libretro-os-inputs.cpp
+@@ -176,6 +176,20 @@ void OSystem_libretro::processInputs(void) {
+ 
+ 
+ 	// Handle mouse buttons
++	// Send the engine's native quicksave/load shortcuts at a normal event boundary.
++	// SCUMM checks whether the current scene permits saving/loading. Emit a complete
++	// press/release pair only on the pad's down edge; holding a stick must not save repeatedly.
++	const int quickActions[] = {RETROKE_QUICKSAVE, RETROKE_QUICKLOAD};
++	for (unsigned i = 0; i < 2; ++i) {
++		int status = mapper_get_mapper_key_status(quickActions[i]);
++		if ((status & ((1 << RETRO_DEVICE_KEY_STATUS) | (1 << RETRO_DEVICE_KEY_CHANGED))) ==
++			((1 << RETRO_DEVICE_KEY_STATUS) | (1 << RETRO_DEVICE_KEY_CHANGED))) {
++			uint16 modifiers = i ? RETROKMOD_CTRL : RETROKMOD_ALT;
++			processKeyEvent(true, Common::KEYCODE_1, '1', modifiers);
++			processKeyEvent(false, Common::KEYCODE_1, '1', modifiers);
++		}
++	}
++
+ 	retropad_value = mapper_get_mapper_key_status(RETROKE_LEFT_BUTTON);
+ 	if (retropad_value & (1 << RETRO_DEVICE_KEY_CHANGED)) {
+ 		Common::Event ev;
+diff --git a/engines/scumm/input.cpp b/engines/scumm/input.cpp
+index 3525910..bca2889 100644
+--- a/engines/scumm/input.cpp
++++ b/engines/scumm/input.cpp
+@@ -398,6 +398,25 @@ void ScummEngine::processInput() {
+ 	Common::KeyState lastKeyHit = _keyPressed;
+ 	_keyPressed.reset();
+ 
++	// TV profile: answer the four-digit MI2 recipe automatically. ScummVM
++	// already accepts any answer when copy protection is disabled. Room 108
++	// is the recipe screen (also used by room.cpp's virtual-keyboard hint).
++	// Confirm its opening prompt, then wait for the numeric fields to appear.
++	// Stop before the visible cursor/difficulty chooser; never choose a mode.
++	if (_game.id == GID_MONKEY2 && _game.platform == Common::kPlatformDOS &&
++		!_copyProtection && _currentRoom == 108 && _cursor.state == 0 &&
++		_tvRecipeStep < 5 && ConfMan.hasKey("tv_auto_recipe") && ConfMan.getBool("tv_auto_recipe")) {
++		uint32 now = _system->getMillis();
++		if (!_tvRecipeNextInput) {
++			_tvRecipeNextInput = now + 3500;
++		} else if ((int32)(now - _tvRecipeNextInput) >= 0 &&
++			lastKeyHit.keycode == Common::KEYCODE_INVALID && !lastKeyHit.ascii) {
++			lastKeyHit = _tvRecipeStep == 0 ? Common::KeyState(Common::KEYCODE_RETURN) : Common::KeyState(Common::KEYCODE_1, '1');
++			++_tvRecipeStep;
++			_tvRecipeNextInput = now + (_tvRecipeStep == 1 ? 2500 : 700);
++		}
++	}
++
+ 	//
+ 	// Clip the mouse coordinates, and compute _virtualMouse.x (and clip it, too)
+ 	//
+diff --git a/engines/scumm/scumm.cpp b/engines/scumm/scumm.cpp
+index d1baa70..422ec30 100644
+--- a/engines/scumm/scumm.cpp
++++ b/engines/scumm/scumm.cpp
+@@ -2247,6 +2247,8 @@ void ScummEngine::resetScumm() {
+ 	}
+ 
+ 	// all keys are released
++	_tvRecipeStep = 0;
++	_tvRecipeNextInput = 0;
+ 	for (i = 0; i < 512; i++)
+ 		_keyDownMap[i] = false;
+ 	for (i = 0; i < kScummActionCount; i++)
+diff --git a/engines/scumm/scumm.h b/engines/scumm/scumm.h
+index 356a360..c261862 100644
+--- a/engines/scumm/scumm.h
++++ b/engines/scumm/scumm.h
+@@ -1637,6 +1637,8 @@ protected:
+ 	int _saveSound = 0;
+ 	bool _native_mt32 = false;
+ 	bool _copyProtection = false;
++	byte _tvRecipeStep = 0;
++	uint32 _tvRecipeNextInput = 0;
+ 	bool _shadowPalRemap = false;
+ 
+ 	// Indy4 Amiga specific

@@ -1,10 +1,10 @@
 # SCUMM-only ScummVM for Android TV
 
-A pinned, sparse SCUMM-only ScummVM libretro build for 32-bit ARM Android TV. Tested with the German floppy version of Indiana Jones and the Fate of Atlantis.
+A pinned, sparse SCUMM-only ScummVM libretro build for 32-bit ARM Android TV. Tested with German Indiana Jones and the Fate of Atlantis and Monkey Island I–III game data.
 
 ## Scope
 
-Uses upstream engine and libretro code without engine source patches. Sparse checkout includes the SCUMM engine and shared infrastructure. The Windows recipe disables libmad/FluidSynth/MT32Emu and supplies USE_SJIS.
+Sparse checkout includes the SCUMM engine and shared infrastructure. The TV patch adds native slot-1 quicksave/quickload actions, a frontend-aware fast-forward clock and optional Monkey Island II recipe-screen automation. The Windows recipe disables libmad/FluidSynth/MT32Emu and supplies USE_SJIS.
 
 This repository contains the integration sources, patches and build/profile files. Upstream engines and dependencies are fetched at the exact revisions in `dependencies.json`; original commercial game data is not included.
 
@@ -29,7 +29,7 @@ Keep original game data on USB. Keep saves in a writable directory. `config/` co
 
 Intro and playable New York street, pointer movement/clicks, German menus, native save/load after process restart and resume tested. With VSync: 59.87 presented FPS in a 31.7-second walking sample.
 
-Other SCUMM titles have not been tested with this build. MP3-compressed audio is unsupported because USE_MAD=0. Native ScummVM saves are supported; RetroArch save states are not. The tested German floppy game has no speech data.
+The follow-up also verified Monkey Island I–III in gameplay, including native save/load, Reset and subsequent loading, fast-forward and Close Content. MI3 uses GLES2 acceleration. A saved game can only be loaded when the engine permits it: finish difficulty selection and skip the opening sequence first. Monkey Island II can automate its recipe screen using `tv_auto_recipe=true`; it still leaves difficulty selection to the player. Other SCUMM titles are untested. MP3-compressed audio is unsupported because USE_MAD=0. Native ScummVM saves are supported; RetroArch save states are not. The tested Atlantis floppy game has no speech data.
 
 These are bounded historical gameplay checks on one Android 11 ARMv7/Mali-G52 TV. Physical controller feel and speaker quality were not independently measured. See `docs/verification.md` for publication-time build checks.
 

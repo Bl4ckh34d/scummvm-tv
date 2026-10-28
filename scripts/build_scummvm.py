@@ -17,6 +17,12 @@ def main():
     revision = subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip()
     if revision != REVISION:
         raise SystemExit(f'Expected {REVISION}, found {revision}')
+    patch = str(ROOT / 'patches/scummvm-tv.patch')
+    applied = subprocess.run(['git', '-C', str(SOURCE), 'apply', '--reverse', '--check', patch],
+                             capture_output=True).returncode == 0
+    if not applied:
+        subprocess.run(['git', '-C', str(SOURCE), 'apply', '--check', patch], check=True)
+        subprocess.run(['git', '-C', str(SOURCE), 'apply', patch], check=True)
     # Upstream's dependency configurator can delete/reset a mismatched checkout.
     # Refuse that situation before invoking make; preserve existing user work.
     for dependency in json.loads((ROOT / 'dependencies.json').read_text())[1:]:
@@ -48,7 +54,6 @@ def main():
     if '--verbose' in sys.argv:
         args.append('V=1')
     log = ROOT / 'evidence/scummvm-build.log'
-    log.parent.mkdir(exist_ok=True)
     log.parent.mkdir(exist_ok=True)
     (ROOT / 'release').mkdir(exist_ok=True)
     with log.open('w', encoding='utf-8') as output:
