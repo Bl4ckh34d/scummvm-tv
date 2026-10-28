@@ -1,0 +1,32 @@
+[
+  {
+    "path": "scummvm",
+    "url": "https://github.com/scummvm/scummvm.git",
+    "revision": "f11533e680532eb61e9123d00602f8cff9bb91db",
+    "sparse": [
+      "common",
+      "audio",
+      "graphics",
+      "gui",
+      "base",
+      "image",
+      "math",
+      "video",
+      "dists",
+      "backends",
+      "doc",
+      "po",
+      "engines/scumm"
+    ]
+  },
+  {
+    "path": "scummvm/backends/platform/libretro/deps/libretro-common",
+    "url": "https://github.com/libretro/libretro-common",
+    "revision": "879c8d507b0b52e77e27d759239c2b5df1e26dfd"
+  },
+  {
+    "path": "scummvm/backends/platform/libretro/deps/libretro-deps",
+    "url": "https://github.com/libretro/libretro-deps",
+    "revision": "bab7d258c451c0e7cba4b6a79f1b062c13efff38"
+  }
+]
